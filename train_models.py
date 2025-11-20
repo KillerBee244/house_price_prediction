@@ -7,25 +7,36 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import pickle
 from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+import os
 
 # ==============================
-# 1. ĐỌC DỮ LIỆU
+# 0. PATH & TẠO FOLDER LƯU ẢNH
 # ==============================
 
 DATA_PATH = Path("data") / "houses.csv"
+MODELS_DIR = Path("models")
+MODELS_DIR.mkdir(exist_ok=True)
+
+IMG_DIR = Path("static") / "img"
+os.makedirs(IMG_DIR, exist_ok=True)
+
+# ==============================
+# 1. ĐỌC & CHUẨN BỊ DỮ LIỆU
+# ==============================
 
 df = pd.read_csv(DATA_PATH)
 
-# TÁCH ZIPCODE TỪ statezip (ví dụ "WA 98136" -> 98136)
+# TÁCH ZIPCODE TỪ statezip (vd: "WA 98136" -> 98136)
 df["zipcode"] = (
     df["statezip"]
     .astype(str)
     .str.extract(r"(\d+)", expand=False)
 )
-
 df["zipcode"] = pd.to_numeric(df["zipcode"], errors="coerce")
 
-# BỘ THUỘC TÍNH TỐI ƯU (bỏ street, statezip, country, date)
+# BỘ THUỘC TÍNH ĐANG DÙNG
 feature_cols = [
     "bedrooms",        # số phòng ngủ
     "bathrooms",       # số phòng tắm
@@ -39,16 +50,14 @@ feature_cols = [
     "sqft_basement",   # diện tích tầng hầm
     "yr_built",        # năm xây
     "yr_renovated",    # năm cải tạo
-    "zipcode",         # mã vùng bưu điện (feature rất mạnh)
-    "city",            # thành phố/khu vực
+    "zipcode",         # mã vùng
+    "city",            # thành phố
 ]
 
-target_col = "price"   # giá nhà (USD) - biến cần dự đoán
+target_col = "price"   # giá nhà (USD) - biến mục tiêu
 
-# Chỉ giữ cột cần thiết
 df = df[feature_cols + [target_col]].copy()
 
-# Chuyển các cột số về dạng numeric (nếu có ký tự lạ, '?' -> NaN)
 numeric_cols = [
     "bedrooms", "bathrooms", "sqft_living", "sqft_lot",
     "floors", "waterfront", "view", "condition",
@@ -59,14 +68,13 @@ numeric_cols = [
 for col in numeric_cols:
     df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# Bỏ các dòng bị thiếu (NaN) ở feature hoặc target
 df = df.dropna(subset=feature_cols + [target_col])
 
 X = df[feature_cols]
 y = df[target_col]
 
 # ==============================
-# 2. TIỀN XỬ LÝ (NUMERIC + CATEGORICAL)
+# 2. TIỀN XỬ LÝ
 # ==============================
 
 numeric_features = numeric_cols
@@ -80,7 +88,7 @@ preprocess = ColumnTransformer(
 )
 
 # ==============================
-# 3. MÔ HÌNH RANDOM FOREST (MẠNH)
+# 3. MÔ HÌNH RANDOM FOREST
 # ==============================
 
 rf_regressor = RandomForestRegressor(
@@ -125,12 +133,70 @@ print(f"RMSE : {rmse:,.2f}")
 # 6. LƯU MODEL
 # ==============================
 
-models_dir = Path("models")
-models_dir.mkdir(exist_ok=True)
-
-model_path = models_dir / "house_price_rf.pkl"
-
+model_path = MODELS_DIR / "house_price_rf.pkl"
 with open(model_path, "wb") as f:
     pickle.dump(model, f)
 
 print(f"\n✅ Đã lưu model Random Forest tại: {model_path}")
+
+# ==============================
+# 7. VẼ CÁC BIỂU ĐỒ ĐỂ VIẾT BÁO CÁO
+# ==============================
+
+# ----- 7.1. Scatter: Giá thực tế vs. Giá dự đoán -----
+plt.figure(figsize=(6, 6))
+plt.scatter(y_test, y_pred, alpha=0.3)
+min_price = min(y_test.min(), y_pred.min())
+max_price = max(y_test.max(), y_pred.max())
+plt.plot([min_price, max_price], [min_price, max_price], "--")
+plt.xlabel("Giá thực tế (USD)")
+plt.ylabel("Giá dự đoán (USD)")
+plt.title("So sánh giá thực tế vs giá dự đoán")
+plt.tight_layout()
+scatter_path = IMG_DIR / "y_true_vs_pred.png"
+plt.savefig(scatter_path, dpi=150)
+plt.close()
+print(f"📊 Đã lưu biểu đồ: {scatter_path}")
+
+# ----- 7.2. Histogram: Phân bố sai số (residuals) -----
+residuals = y_test - y_pred
+plt.figure(figsize=(6, 4))
+plt.hist(residuals, bins=50)
+plt.xlabel("Sai số (Giá thực tế - Giá dự đoán) [USD]")
+plt.ylabel("Tần suất")
+plt.title("Phân bố sai số dự đoán (Residuals)")
+plt.tight_layout()
+residuals_path = IMG_DIR / "residuals_hist.png"
+plt.savefig(residuals_path, dpi=150)
+plt.close()
+print(f"📊 Đã lưu biểu đồ: {residuals_path}")
+
+# ----- 7.3. Feature Importance (tổng hợp theo feature gốc) -----
+rf = model.named_steps["rf"]
+pre = model.named_steps["preprocess"]
+
+# tên cột numeric giữ nguyên
+num_names = np.array(numeric_features)
+
+# tên cột sau one-hot cho city
+cat_transformer = pre.named_transformers_["cat"]
+city_feature_names = cat_transformer.get_feature_names_out(["city"])
+
+all_feature_names = np.concatenate([num_names, city_feature_names])
+importances = rf.feature_importances_
+
+# Lấy top 15 feature quan trọng nhất
+idx = np.argsort(importances)[::-1][:15]
+top_features = all_feature_names[idx]
+top_importances = importances[idx]
+
+plt.figure(figsize=(8, 5))
+plt.barh(range(len(top_features)), top_importances[::-1])
+plt.yticks(range(len(top_features)), top_features[::-1])
+plt.xlabel("Độ quan trọng tương đối")
+plt.title("Top 15 thuộc tính quan trọng nhất (Random Forest)")
+plt.tight_layout()
+fi_path = IMG_DIR / "feature_importance.png"
+plt.savefig(fi_path, dpi=150)
+plt.close()
+print(f"📊 Đã lưu biểu đồ: {fi_path}")
