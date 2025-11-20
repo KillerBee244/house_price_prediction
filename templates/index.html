@@ -2,7 +2,7 @@
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <title>Dự đoán giá nhà</title>
+    <title>Dự đoán giá nhà - Random Forest</title>
     <style>
       body {
         font-family: Arial, Helvetica, sans-serif;
@@ -12,7 +12,7 @@
       }
 
       .container {
-        max-width: 650px;
+        max-width: 900px;
         margin: 40px auto;
         background: #ffffff;
         border-radius: 12px;
@@ -36,7 +36,7 @@
 
       form {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(3, 1fr);
         gap: 12px 16px;
       }
 
@@ -78,7 +78,7 @@
       }
 
       .full-width {
-        grid-column: 1 / 3;
+        grid-column: 1 / 4;
       }
 
       .btn-submit {
@@ -148,23 +148,14 @@
         color: #94a3b8;
         text-align: center;
       }
-
-      .readonly-field {
-        padding: 6px 8px;
-        border-radius: 6px;
-        border: 1px dashed #cbd5e1;
-        background: #f8fafc;
-        font-size: 14px;
-        color: #0f172a;
-      }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>Ứng dụng dự đoán giá nhà tại Mỹ (USA)</h1>
+      <h1>Dự đoán giá nhà với Random Forest</h1>
       <div class="subtitle">
-        Mô hình: Linear Regression &amp; Lasso Regression<br />
-        Dữ liệu: Nhà ở Mỹ (USA) – một số thuộc tính cơ bản
+        Sử dụng các thuộc tính: diện tích, phòng, tầng, view, tình trạng nhà,
+        năm xây, thành phố, zipcode
       </div>
 
       {% if error_msg %}
@@ -172,36 +163,6 @@
       {% endif %}
 
       <form method="POST">
-        <!-- sqft_living -->
-        <div class="form-group">
-          <label for="sqft_living">Diện tích sàn (sqft_living)</label>
-          <input
-            type="number"
-            step="1"
-            id="sqft_living"
-            name="sqft_living"
-            placeholder="Ví dụ: 1800"
-            required
-          />
-          <div class="unit-note">Đơn vị: feet vuông (ft²)</div>
-        </div>
-
-        <!-- sqft_lot -->
-        <div class="form-group">
-          <label for="sqft_lot">Diện tích đất (sqft_lot)</label>
-          <input
-            type="number"
-            step="1"
-            id="sqft_lot"
-            name="sqft_lot"
-            placeholder="Ví dụ: 5000"
-            required
-          />
-          <div class="unit-note">
-            Đơn vị: feet vuông (ft²) – diện tích toàn bộ lô đất
-          </div>
-        </div>
-
         <!-- bedrooms -->
         <div class="form-group">
           <label for="bedrooms">Số phòng ngủ (bedrooms)</label>
@@ -221,16 +182,178 @@
           <label for="bathrooms">Số phòng tắm (bathrooms)</label>
           <input
             type="number"
-            step="1"
+            step="0.25"
             id="bathrooms"
             name="bathrooms"
-            placeholder="Ví dụ: 3"
+            placeholder="Ví dụ: 2.5"
             required
           />
-          <div class="unit-note">Đơn vị: phòng tắm ( ví dụ 3)</div>
+          <div class="unit-note">Có thể là số thập phân, ví dụ 1.5, 2.5</div>
         </div>
 
-        <!-- city select -->
+        <!-- floors -->
+        <div class="form-group">
+          <label for="floors">Số tầng (floors)</label>
+          <input
+            type="number"
+            step="0.5"
+            id="floors"
+            name="floors"
+            placeholder="Ví dụ: 2"
+            required
+          />
+          <div class="unit-note">Số tầng nhà (1, 1.5, 2, 2.5, ...)</div>
+        </div>
+
+        <!-- sqft_living -->
+        <div class="form-group">
+          <label for="sqft_living">Diện tích sinh hoạt (sqft_living)</label>
+          <input
+            type="number"
+            step="1"
+            id="sqft_living"
+            name="sqft_living"
+            placeholder="Ví dụ: 1800"
+            required
+          />
+          <div class="unit-note">
+            Đơn vị: feet vuông (ft²) – diện tích sàn sử dụng
+          </div>
+        </div>
+
+        <!-- sqft_lot -->
+        <div class="form-group">
+          <label for="sqft_lot">Diện tích đất (sqft_lot)</label>
+          <input
+            type="number"
+            step="1"
+            id="sqft_lot"
+            name="sqft_lot"
+            placeholder="Ví dụ: 5000"
+            required
+          />
+          <div class="unit-note">Đơn vị: feet vuông (ft²) – toàn bộ lô đất</div>
+        </div>
+
+        <!-- waterfront -->
+        <div class="form-group">
+          <label for="waterfront">Có view mặt nước? (waterfront)</label>
+          <select id="waterfront" name="waterfront" required>
+            <option value="0">0 - Không</option>
+            <option value="1">1 - Có (view hồ/biển/sông)</option>
+          </select>
+          <div class="unit-note">1 = có view ra hồ/biển/sông, 0 = không</div>
+        </div>
+
+        <!-- view -->
+        <div class="form-group">
+          <label for="view">Chất lượng view (view)</label>
+          <input
+            type="number"
+            step="1"
+            id="view"
+            name="view"
+            placeholder="0 - 4"
+            min="0"
+            max="4"
+            required
+          />
+          <div class="unit-note">0 (không có) → 4 (view rất đẹp)</div>
+        </div>
+
+        <!-- condition -->
+        <div class="form-group">
+          <label for="condition">Tình trạng nhà (condition)</label>
+          <input
+            type="number"
+            step="1"
+            id="condition"
+            name="condition"
+            placeholder="1 - 5"
+            min="1"
+            max="5"
+            required
+          />
+          <div class="unit-note">1 (rất tệ) → 5 (rất tốt)</div>
+        </div>
+
+        <!-- sqft_above -->
+        <div class="form-group">
+          <label for="sqft_above">Diện tích trên mặt đất (sqft_above)</label>
+          <input
+            type="number"
+            step="1"
+            id="sqft_above"
+            name="sqft_above"
+            placeholder="Ví dụ: 1500"
+            required
+          />
+          <div class="unit-note">
+            Diện tích tầng trên mặt đất, không tính tầng hầm
+          </div>
+        </div>
+
+        <!-- sqft_basement -->
+        <div class="form-group">
+          <label for="sqft_basement">Diện tích tầng hầm (sqft_basement)</label>
+          <input
+            type="number"
+            step="1"
+            id="sqft_basement"
+            name="sqft_basement"
+            placeholder="0 nếu không có"
+            required
+          />
+          <div class="unit-note">
+            Đơn vị: ft². Nếu không có tầng hầm, nhập 0.
+          </div>
+        </div>
+
+        <!-- yr_built -->
+        <div class="form-group">
+          <label for="yr_built">Năm xây dựng (yr_built)</label>
+          <input
+            type="number"
+            step="1"
+            id="yr_built"
+            name="yr_built"
+            placeholder="Ví dụ: 1990"
+            required
+          />
+          <div class="unit-note">Năm xây dựng ban đầu</div>
+        </div>
+
+        <!-- yr_renovated -->
+        <div class="form-group">
+          <label for="yr_renovated">Năm cải tạo (yr_renovated)</label>
+          <input
+            type="number"
+            step="1"
+            id="yr_renovated"
+            name="yr_renovated"
+            placeholder="0 nếu chưa cải tạo"
+            required
+          />
+          <div class="unit-note">0 nếu chưa từng cải tạo lớn</div>
+        </div>
+
+        <!-- zipcode -->
+        <div class="form-group">
+          <label for="zipcode">Mã vùng bưu điện (zipcode)</label>
+          <input
+            type="number"
+            step="1"
+            id="zipcode"
+            name="zipcode"
+            placeholder="Ví dụ: 98136"
+            required
+          />
+          <div class="unit-note">
+            Lấy từ phần số trong cột statezip (WA 98136 → 98136)
+          </div>
+        </div>
+
+        <!-- city -->
         <div class="form-group">
           <label for="city">Thành phố (city)</label>
           <select id="city" name="city" required>
@@ -262,42 +385,31 @@
           </div>
         </div>
 
-        <!-- country fixed -->
-        <div class="form-group">
-          <label>Quốc gia (country)</label>
-          <div class="readonly-field">USA (cố định)</div>
-          <div class="unit-note">Dữ liệu chỉ gồm bất động sản tại Hoa Kỳ.</div>
-        </div>
-
         <!-- submit -->
         <div class="form-group full-width">
           <button type="submit" class="btn-submit">
-            Dự đoán giá nhà (USD)
+            Dự đoán giá nhà (USD) bằng Random Forest
           </button>
         </div>
       </form>
 
-      {% if prediction_lin is not none %}
+      {% if prediction is not none %}
       <div class="result-box">
-        <p class="result-title">Kết quả dự đoán</p>
+        <p class="result-title">Kết quả dự đoán (Random Forest Regression)</p>
         <p class="result-item">
-          Linear Regression:
-          <span>${{ "{:,.2f}".format(prediction_lin) }} USD</span>
-        </p>
-        <p class="result-item">
-          Lasso Regression:
-          <span>${{ "{:,.2f}".format(prediction_lasso) }} USD</span>
+          Giá nhà ước tính:
+          <span>${{ "{:,.2f}".format(prediction) }} USD</span>
         </p>
         <div class="unit-note">
-          * Đơn vị: đô la Mỹ (USD). Kết quả chỉ mang tính tham khảo, phụ thuộc
-          vào dữ liệu huấn luyện.
+          * Kết quả mang tính tham khảo, phụ thuộc vào phân bố dữ liệu huấn
+          luyện.
         </div>
       </div>
       {% endif %}
 
       <div class="footer-note">
-        Demo bài tập: Dự đoán giá nhà bằng Machine Learning (Linear Regression
-        &amp; Lasso).
+        Demo bài tập: Dự đoán giá nhà bằng Machine Learning (Random Forest +
+        zipcode).
       </div>
     </div>
   </body>

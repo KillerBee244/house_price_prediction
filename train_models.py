@@ -1,10 +1,10 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LinearRegression, Lasso
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 import pickle
 from pathlib import Path
 
@@ -16,61 +16,85 @@ DATA_PATH = Path("data") / "houses.csv"
 
 df = pd.read_csv(DATA_PATH)
 
-# Chỉ dùng các cột:
-# sqft_living – diện tích sàn
-# sqft_lot    – diện tích đất
-# bedrooms    – số phòng ngủ
-# bathrooms   – số phòng tắm
-# city        – thành phố
-# country     – quốc gia
-feature_cols = [
-    "sqft_living",
-    "sqft_lot",
-    "bedrooms",
-    "bathrooms",
-    "city",
-    "country",
-]
-target_col = "price"
+# TÁCH ZIPCODE TỪ statezip (ví dụ "WA 98136" -> 98136)
+df["zipcode"] = (
+    df["statezip"]
+    .astype(str)
+    .str.extract(r"(\d+)", expand=False)
+)
 
-# Giữ đúng các cột cần thiết
+df["zipcode"] = pd.to_numeric(df["zipcode"], errors="coerce")
+
+# BỘ THUỘC TÍNH TỐI ƯU (bỏ street, statezip, country, date)
+feature_cols = [
+    "bedrooms",        # số phòng ngủ
+    "bathrooms",       # số phòng tắm
+    "sqft_living",     # diện tích sinh hoạt
+    "sqft_lot",        # diện tích đất
+    "floors",          # số tầng
+    "waterfront",      # có view mặt nước không (0/1)
+    "view",            # chất lượng view (0-4)
+    "condition",       # tình trạng nhà (1-5)
+    "sqft_above",      # diện tích trên mặt đất
+    "sqft_basement",   # diện tích tầng hầm
+    "yr_built",        # năm xây
+    "yr_renovated",    # năm cải tạo
+    "zipcode",         # mã vùng bưu điện (feature rất mạnh)
+    "city",            # thành phố/khu vực
+]
+
+target_col = "price"   # giá nhà (USD) - biến cần dự đoán
+
+# Chỉ giữ cột cần thiết
 df = df[feature_cols + [target_col]].copy()
 
-# Bỏ dòng bị thiếu dữ liệu
-df = df.dropna()
+# Chuyển các cột số về dạng numeric (nếu có ký tự lạ, '?' -> NaN)
+numeric_cols = [
+    "bedrooms", "bathrooms", "sqft_living", "sqft_lot",
+    "floors", "waterfront", "view", "condition",
+    "sqft_above", "sqft_basement", "yr_built",
+    "yr_renovated", "zipcode",
+]
+
+for col in numeric_cols:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+# Bỏ các dòng bị thiếu (NaN) ở feature hoặc target
+df = df.dropna(subset=feature_cols + [target_col])
 
 X = df[feature_cols]
 y = df[target_col]
 
 # ==============================
-# 2. TIỀN XỬ LÝ
+# 2. TIỀN XỬ LÝ (NUMERIC + CATEGORICAL)
 # ==============================
 
-numeric_features = ["sqft_living", "sqft_lot", "bedrooms", "bathrooms"]
-categorical_features = ["city", "country"]
-
-numeric_transformer = StandardScaler()
-categorical_transformer = OneHotEncoder(handle_unknown="ignore")
+numeric_features = numeric_cols
+categorical_features = ["city"]
 
 preprocess = ColumnTransformer(
     transformers=[
-        ("num", numeric_transformer, numeric_features),
-        ("cat", categorical_transformer, categorical_features),
+        ("num", "passthrough", numeric_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
     ]
 )
 
 # ==============================
-# 3. TẠO PIPELINE CHO 2 MÔ HÌNH
+# 3. MÔ HÌNH RANDOM FOREST (MẠNH)
 # ==============================
 
-linreg_pipeline = Pipeline(steps=[
-    ("preprocess", preprocess),
-    ("model", LinearRegression())
-])
+rf_regressor = RandomForestRegressor(
+    n_estimators=500,
+    max_depth=40,
+    min_samples_split=2,
+    min_samples_leaf=1,
+    random_state=42,
+    n_jobs=-1
+)
 
-lasso_pipeline = Pipeline(steps=[
+model = Pipeline(steps=[
     ("preprocess", preprocess),
-    ("model", Lasso(alpha=1.0, max_iter=10000))
+    ("rf", rf_regressor),
 ])
 
 # ==============================
@@ -82,37 +106,31 @@ X_train, X_test, y_train, y_test = train_test_split(
 )
 
 # ==============================
-# 5. TRAIN VÀ ĐÁNH GIÁ
+# 5. TRAIN & ĐÁNH GIÁ
 # ==============================
 
-# Linear Regression
-linreg_pipeline.fit(X_train, y_train)
-y_pred_lin = linreg_pipeline.predict(X_test)
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
 
-print("=== Linear Regression ===")
-print("MSE:", mean_squared_error(y_test, y_pred_lin))
-print("R2 :", r2_score(y_test, y_pred_lin))
+r2 = r2_score(y_test, y_pred)
+mae = mean_absolute_error(y_test, y_pred)
+rmse = mean_squared_error(y_test, y_pred) ** 0.5
 
-# Lasso Regression
-lasso_pipeline.fit(X_train, y_train)
-y_pred_lasso = lasso_pipeline.predict(X_test)
-
-print("\n=== Lasso Regression ===")
-print("MSE:", mean_squared_error(y_test, y_pred_lasso))
-print("R2 :", r2_score(y_test, y_pred_lasso))
+print("=== Random Forest Regression (tối ưu với zipcode) ===")
+print(f"R2   : {r2:.4f}")
+print(f"MAE  : {mae:,.2f}")
+print(f"RMSE : {rmse:,.2f}")
 
 # ==============================
-# 6. LƯU FILE .PKL
+# 6. LƯU MODEL
 # ==============================
 
 models_dir = Path("models")
 models_dir.mkdir(exist_ok=True)
 
-with open(models_dir / "linear_regression_model.pkl", "wb") as f:
-    pickle.dump(linreg_pipeline, f)
+model_path = models_dir / "house_price_rf.pkl"
 
-with open(models_dir / "lasso_regression_model.pkl", "wb") as f:
-    pickle.dump(lasso_pipeline, f)
+with open(model_path, "wb") as f:
+    pickle.dump(model, f)
 
-print("\n✅ Đã lưu models/linear_regression_model.pkl")
-print("✅ Đã lưu models/lasso_regression_model.pkl")
+print(f"\n✅ Đã lưu model Random Forest tại: {model_path}")

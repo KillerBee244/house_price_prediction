@@ -7,58 +7,76 @@ app = Flask(__name__)
 
 # Đường dẫn tới thư mục models
 MODELS_DIR = Path("models")
+MODEL_PATH = MODELS_DIR / "house_price_rf.pkl"
 
-# Load 2 mô hình đã train
-with open(MODELS_DIR / "linear_regression_model.pkl", "rb") as f:
-    linreg_model = pickle.load(f)
+# Load mô hình Random Forest đã train
+with open(MODEL_PATH, "rb") as f:
+    rf_model = pickle.load(f)
 
-with open(MODELS_DIR / "lasso_regression_model.pkl", "rb") as f:
-    lasso_model = pickle.load(f)
-
-# Cột feature phải đúng thứ tự như khi train
+# Danh sách cột phải TRÙNG với train_models.py
 FEATURE_COLS = [
-    "sqft_living",
-    "sqft_lot",
     "bedrooms",
     "bathrooms",
+    "sqft_living",
+    "sqft_lot",
+    "floors",
+    "waterfront",
+    "view",
+    "condition",
+    "sqft_above",
+    "sqft_basement",
+    "yr_built",
+    "yr_renovated",
+    "zipcode",
     "city",
-    "country",
 ]
 
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    prediction_lin = None
-    prediction_lasso = None
+    prediction = None
     error_msg = None
 
     if request.method == "POST":
         try:
             # Lấy dữ liệu từ form
-            sqft_living = float(request.form["sqft_living"])
-            sqft_lot = float(request.form["sqft_lot"])
             bedrooms = float(request.form["bedrooms"])
             bathrooms = float(request.form["bathrooms"])
+            sqft_living = float(request.form["sqft_living"])
+            sqft_lot = float(request.form["sqft_lot"])
+            floors = float(request.form["floors"])
+            waterfront = float(request.form["waterfront"])
+            view = float(request.form["view"])
+            condition = float(request.form["condition"])
+            sqft_above = float(request.form["sqft_above"])
+            sqft_basement = float(request.form["sqft_basement"])
+            yr_built = float(request.form["yr_built"])
+            yr_renovated = float(request.form["yr_renovated"])
+            zipcode = float(request.form["zipcode"])
             city = request.form["city"]
-
-            # Country cố định là USA
-            country = "USA"
 
             # Tạo DataFrame 1 dòng
             input_dict = {
-                "sqft_living": [sqft_living],
-                "sqft_lot": [sqft_lot],
                 "bedrooms": [bedrooms],
                 "bathrooms": [bathrooms],
+                "sqft_living": [sqft_living],
+                "sqft_lot": [sqft_lot],
+                "floors": [floors],
+                "waterfront": [waterfront],
+                "view": [view],
+                "condition": [condition],
+                "sqft_above": [sqft_above],
+                "sqft_basement": [sqft_basement],
+                "yr_built": [yr_built],
+                "yr_renovated": [yr_renovated],
+                "zipcode": [zipcode],
                 "city": [city],
-                "country": [country],
             }
 
             input_df = pd.DataFrame(input_dict, columns=FEATURE_COLS)
 
-            # Dự đoán
-            prediction_lin = float(linreg_model.predict(input_df)[0])
-            prediction_lasso = float(lasso_model.predict(input_df)[0])
+            # Dự đoán với Random Forest
+            prediction = float(rf_model.predict(input_df)[0])
 
         except Exception as e:
             error_msg = f"Lỗi khi xử lý dữ liệu nhập: {e}"
@@ -66,8 +84,7 @@ def index():
 
     return render_template(
         "index.html",
-        prediction_lin=prediction_lin,
-        prediction_lasso=prediction_lasso,
+        prediction=prediction,
         error_msg=error_msg,
     )
 
